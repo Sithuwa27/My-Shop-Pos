@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .font-thermal {
+    font-family: 'Courier Prime', monospace, 'Noto Sans Sinhala', sans-serif;
+  }
+  .font-sinhala {
+    font-family: 'Noto Sans Sinhala', 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+/* Realistic Thermal Receipt Serrated Paper Tear Edge */
+.receipt-tear-top {
+  background: radial-gradient(circle at 6px -3px, transparent 6px, #ffffff 6px) repeat-x;
+  background-size: 12px 8px;
+  height: 8px;
+  width: 100%;
+}
+
+.receipt-tear-bottom {
+  background: radial-gradient(circle at 6px 9px, transparent 6px, #ffffff 6px) repeat-x;
+  background-size: 12px 8px;
+  height: 8px;
+  width: 100%;
+}
+
+/* Subtle thermal paper texture */
+.thermal-paper {
+  background-color: #ffffff;
+  color: #111827;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #printable-receipt, #printable-receipt * {
+    visibility: visible !important;
+  }
+  #printable-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 58mm !important;
+    max-width: 58mm !important;
+    margin: 0 !important;
+    padding: 3mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+  #printable-receipt .receipt-tear-top,
+  #printable-receipt .receipt-tear-bottom {
+    display: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#0369a1" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#06b6d4" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <!-- Rounded Base Background with safe margin for maskable icon -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)" />
+  
+  <!-- Outer Glow Frame -->
+  <rect x="24" y="24" width="464" height="464" rx="90" fill="none" stroke="#38bdf8" stroke-opacity="0.25" stroke-width="4" />
+
+  <!-- Thermal Printer & Mobile Phone Art in Safe Zone (80% center) -->
+  <g transform="translate(256, 230)" filter="url(#glow)">
+    <!-- Main POS Printer Body -->
+    <rect x="-130" y="-80" width="260" height="200" rx="36" fill="#0f172a" stroke="#06b6d4" stroke-width="8" />
+    
+    <!-- Printer Roll Lid Top -->
+    <rect x="-105" y="-125" width="210" height="55" rx="18" fill="#1e293b" stroke="#38bdf8" stroke-width="6" />
+    
+    <!-- Paper Feed Slot -->
+    <rect x="-85" y="-82" width="170" height="12" rx="6" fill="#020617" />
+    
+    <!-- Thermal Paper Receipt Ejecting Out -->
+    <path d="M-75,-80 L-75,-165 L-55,-155 L-35,-165 L-15,-155 L5,-165 L25,-155 L45,-165 L65,-155 L75,-165 L75,-80 Z" fill="#f8fafc" />
+    <!-- Receipt Lines -->
+    <line x1="-50" y1="-140" x2="50" y2="-140" stroke="#0f172a" stroke-width="4" stroke-linecap="round" />
+    <line x1="-50" y1="-122" x2="30" y2="-122" stroke="#0f172a" stroke-width="4" stroke-linecap="round" />
+    <line x1="-50" y1="-104" x2="40" y2="-104" stroke="#0f172a" stroke-width="4" stroke-linecap="round" />
+
+    <!-- Bluetooth Icon Symbol on Printer -->
+    <circle cx="-65" cy="40" r="28" fill="#0284c7" fill-opacity="0.25" stroke="#38bdf8" stroke-width="3" />
+    <path d="M-65,22 L-65,58 L-53,46 L-73,34 L-53,22 L-65,34 L-73,46" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+    
+    <!-- LED Indicators -->
+    <circle cx="65" cy="25" r="8" fill="#10b981" />
+    <circle cx="65" cy="55" r="8" fill="#06b6d4" />
+    
+    <!-- Brand Name Text -->
+    <text x="0" y="85" font-family="'Plus Jakarta Sans', sans-serif" font-weight="900" font-size="22" fill="#ffffff" text-anchor="middle" letter-spacing="2">BRAVE POS</text>
+  </g>
+
+  <!-- Subtitle Tag -->
+  <text x="256" y="440" font-family="'Plus Jakarta Sans', sans-serif" font-weight="700" font-size="22" fill="#38bdf8" text-anchor="middle" letter-spacing="1">MOBILE THERMAL PRINTER</text>
+</svg>
