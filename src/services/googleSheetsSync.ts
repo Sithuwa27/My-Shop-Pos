@@ -227,7 +227,7 @@ export const googleSheetsSync = {
     await ensureTab(id);
     const rows = snapshotToRows(snapshot);
     await api(`/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(SHEET_NAME + '!A:D')}:clear`, { method: 'POST', body: '{}' });
-    await api(`/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(SHEET_NAME + '!A1')}?valueInputOption=RAW`, {
+    await api(`/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(`${SHEET_NAME}!A1:D${rows.length}`)}?valueInputOption=RAW`, {
       method: 'PUT',
       body: JSON.stringify({ range: `${SHEET_NAME}!A1:D${rows.length}`, majorDimension: 'ROWS', values: rows }),
     });
