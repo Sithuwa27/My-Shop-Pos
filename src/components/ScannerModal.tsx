@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Camera, X, RefreshCw, AlertCircle, Scan, Keyboard, CheckCircle2 } from 'lucide-react';
+import { Camera, X, RefreshCw, AlertCircle, Scan, Keyboard, CheckCircle2, Barcode, QrCode } from 'lucide-react';
 import { soundEffects } from '../services/soundEffects';
 import { storage } from '../services/storage';
 
@@ -27,6 +27,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
+  const [scanMode, setScanMode] = useState<'barcode' | 'qr'>('barcode');
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanHandledRef = useRef(false);
   const html5QrCodeId = 'qr-reader-container';
@@ -50,17 +51,26 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         if (!isMounted) return;
 
         const scanner = new Html5Qrcode(html5QrCodeId, {
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.CODE_93,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.ITF,
-          ],
+          // Barcode is the primary POS workflow. Keeping QR out of the
+          // default decoder makes EAN/UPC/Code128 detection faster and more
+          // reliable. QR can still be selected with the mode button below.
+          formatsToSupport: scanMode === 'barcode'
+            ? [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39,
+                Html5QrcodeSupportedFormats.CODE_93,
+                Html5QrcodeSupportedFormats.ITF,
+              ]
+            : [Html5QrcodeSupportedFormats.QR_CODE],
+          // Chrome/Android can use the native BarcodeDetector when available,
+          // which makes QR/barcode detection noticeably faster.
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
           verbose: false,
         });
 
@@ -71,21 +81,36 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         // wide, while QR codes are square. A function lets html5-qrcode choose
         // a safe scan area for both types on phone screens.
         const config = {
-          fps: 12,
+          // Barcode-first scanning: a wider crop matches EAN/UPC/Code128 labels
+          // and avoids wasting decode work on the unused parts of the camera frame.
+          fps: scanMode === 'barcode' ? 24 : 18,
           qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            const width = Math.floor(Math.min(viewfinderWidth * 0.88, 420));
-            const height = Math.floor(Math.min(viewfinderHeight * 0.62, 300));
-            return { width, height };
+            if (scanMode === 'barcode') {
+              const width = Math.floor(Math.min(viewfinderWidth * 0.92, 560));
+              const height = Math.floor(Math.min(viewfinderHeight * 0.30, 170));
+              return { width, height };
+            }
+            const size = Math.floor(Math.min(viewfinderWidth * 0.72, viewfinderHeight * 0.58, 360));
+            return { width: size, height: size };
           },
           aspectRatio: 1.7777778,
           disableFlip: false,
+          // 1280x720 is usually a better mobile scanning sweet spot than 1080p:
+          // enough detail for retail barcodes while reducing autofocus/CPU lag.
+          videoConstraints: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30, max: 30 },
+            advanced: [{ focusMode: 'continuous' }, { zoom: 1.0 }],
+          } as MediaTrackConstraints,
         };
 
-        // Prefer the environment/rear camera by facing mode. This is more reliable
-        // inside an installed PWA where camera labels may be empty.
+        // Prefer the environment/rear camera. The config also requests HD video
+        // and continuous autofocus where the device/browser supports it.
         try {
           await scanner.start(
-            { facingMode: { exact: 'environment' } },
+            { facingMode: { ideal: 'environment' } },
             config,
           async (decodedText) => {
             const code = decodedText.trim();
@@ -139,7 +164,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
       isMounted = false;
       stopScanner();
     };
-  }, [isOpen]);
+  }, [isOpen, scanMode]);
 
   const stopScanner = async () => {
     try {
@@ -193,13 +218,33 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
           </button>
         </div>
 
+        {/* Scan mode: barcode is the fast/default POS mode */}
+        <div className="px-3 pt-3 bg-slate-900">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => { stopScanner(); setScanMode('barcode'); }}
+              className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border transition ${scanMode === 'barcode' ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
+            >
+              <Barcode className="w-4 h-4" /> Barcode (Fast)
+            </button>
+            <button
+              type="button"
+              onClick={() => { stopScanner(); setScanMode('qr'); }}
+              className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border transition ${scanMode === 'qr' ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
+            >
+              <QrCode className="w-4 h-4" /> QR
+            </button>
+          </div>
+        </div>
+
         {/* Video Scanner Area */}
-        <div className="relative bg-black h-[38vh] min-h-[220px] max-h-[360px] flex items-center justify-center overflow-hidden shrink-0">
+        <div className="relative bg-black h-[42vh] min-h-[260px] max-h-[400px] flex items-center justify-center overflow-hidden shrink-0">
           <div id={html5QrCodeId} className="w-full h-full" />
 
           {/* Scanner Overlay Sight Guide */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="w-[82%] h-[42%] max-w-[360px] border-2 border-dashed border-cyan-400/80 rounded-2xl relative">
+            <div className={`${scanMode === 'barcode' ? 'w-[92%] h-[30%] max-w-[560px]' : 'w-[72%] h-[58%] max-w-[360px]'} border-2 border-dashed border-cyan-400/80 rounded-2xl relative">
               <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-cyan-400 rounded-tl-lg" />
               <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-cyan-400 rounded-tr-lg" />
               <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-cyan-400 rounded-bl-lg" />
