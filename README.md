@@ -1,1 +1,0 @@
-# My-Shop-Pos
