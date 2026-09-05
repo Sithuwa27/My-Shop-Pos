@@ -45,6 +45,15 @@ export const CustomerHistoryModal: React.FC<Props> = ({ isOpen, onClose, invoice
     (!!customer.phone && r.customerPhone === customer.phone)
   ) : [];
   const purchased = customerInvoices.flatMap(i => i.items.map(item => ({ ...item, invoiceNumber: i.invoiceNumber, date: i.date })));
+  // Customer account summary: total billed, amount already collected, and outstanding debt.
+  // For cash overpayments, only the bill total counts as collected (change is not debt).
+  const totalBilled = customerInvoices.reduce((sum, i) => sum + Math.max(0, Number(i.grandTotal) || 0), 0);
+  const totalPaid = customerInvoices.reduce((sum, i) => {
+    const total = Math.max(0, Number(i.grandTotal) || 0);
+    const paid = Math.max(0, Number(i.paidAmount) || 0);
+    return sum + Math.min(total, paid);
+  }, 0);
+  const totalDue = Math.max(0, totalBilled - totalPaid);
   const money = (n: number) => `${business.currencySymbol} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (!isOpen) return null;
 
@@ -64,10 +73,15 @@ export const CustomerHistoryModal: React.FC<Props> = ({ isOpen, onClose, invoice
       {customer && <>
         <div className="mt-4 rounded-2xl bg-slate-900 border border-cyan-500/20 p-4 flex items-center justify-between"><div><p className="text-lg font-black">{customer.name}</p>{customer.phone&&<p className="text-xs text-slate-400 flex items-center gap-1 mt-1"><Phone className="w-3 h-3"/>{customer.phone}</p>}</div><button onClick={()=>setSelected(null)} className="text-xs text-cyan-400 font-bold">Change</button></div>
         <div className="grid grid-cols-3 gap-2 mt-3"><div className="stat"><ShoppingBag/><b>{purchased.length}</b><span>Items</span></div><div className="stat"><Wrench/><b>{customerRepairs.length}</b><span>Repairs</span></div><div className="stat"><Receipt/><b>{customerInvoices.length}</b><span>Bills</span></div></div>
+        <section className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="account-stat"><span>මුළු බිල් ගාන</span><b>{money(totalBilled)}</b></div>
+          <div className="account-stat paid"><span>අරන් තියන ගාන</span><b>{money(totalPaid)}</b></div>
+          <div className="account-stat due"><span>ගන්න තියන නය</span><b>{money(totalDue)}</b></div>
+        </section>
         <section className="mt-4 rounded-2xl bg-slate-900 border border-slate-800 p-4"><h3 className="font-black flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-cyan-400"/>Purchased Items</h3>{purchased.length===0?<p className="text-xs text-slate-500 py-5">No purchased items found.</p>:<div className="mt-2">{purchased.map((item,idx)=><div key={`${item.invoiceNumber}-${item.id}-${idx}`} className="py-3 border-b border-slate-800 last:border-0 flex justify-between gap-3"><div className="min-w-0"><p className="font-semibold text-sm break-words">{item.name}</p><p className="text-[10px] text-slate-500">Bill {item.invoiceNumber} • {item.date} • Qty {item.quantity}</p></div><b className="text-sm whitespace-nowrap">{money(item.total)}</b></div>)}</div>}</section>
         <section className="mt-4 rounded-2xl bg-slate-900 border border-slate-800 p-4"><h3 className="font-black flex items-center gap-2"><Wrench className="w-4 h-4 text-violet-400"/>Repair History</h3>{customerRepairs.length===0?<p className="text-xs text-slate-500 py-5">No repair jobs found.</p>:<div className="mt-2">{customerRepairs.map(r=><div key={r.id} className="py-3 border-b border-slate-800 last:border-0"><div className="flex justify-between gap-3"><div><p className="font-semibold text-sm">{r.jobNumber} • {r.device}</p><p className="text-xs text-slate-400 mt-1">{r.issue}</p></div><span className="text-[10px] px-2 py-1 rounded-full bg-violet-500/10 text-violet-300 h-fit">{r.status}</span></div><p className="text-xs text-slate-500 mt-2">Estimate {money(r.estimate)} • Advance {money(r.advance)} • Balance {money(Math.max(0,r.estimate-r.advance))}</p></div>)}</div>}</section>
       </>}
     </div>
-    <style>{`.stat{background:rgb(15 23 42);border:1px solid rgb(30 41 59);border-radius:1rem;padding:.75rem;display:flex;flex-direction:column;align-items:center;gap:.2rem}.stat svg{width:17px;height:17px;color:#22d3ee}.stat b{font-size:1.1rem}.stat span{font-size:9px;color:#64748b}`}</style>
+    <style>{`.stat{background:rgb(15 23 42);border:1px solid rgb(30 41 59);border-radius:1rem;padding:.75rem;display:flex;flex-direction:column;align-items:center;gap:.2rem}.stat svg{width:17px;height:17px;color:#22d3ee}.stat b{font-size:1.1rem}.stat span{font-size:9px;color:#64748b}.account-stat{background:rgb(15 23 42);border:1px solid rgb(51 65 85);border-radius:1rem;padding:.8rem}.account-stat span{display:block;font-size:10px;color:#94a3b8;margin-bottom:.3rem}.account-stat b{font-size:1rem;color:#f8fafc}.account-stat.paid{border-color:rgba(34,197,94,.25)}.account-stat.paid b{color:#86efac}.account-stat.due{border-color:rgba(239,68,68,.3)}.account-stat.due b{color:#fca5a5}`}</style>
   </div>;
 };
