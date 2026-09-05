@@ -215,6 +215,11 @@ export default function App() {
   };
 
   // Save invoice manually and deduct stock
+  const handleUpdateCustomerInvoice = (updatedInvoice: Invoice) => {
+    storage.saveInvoice(updatedInvoice);
+    setInvoices(storage.getInvoices());
+  };
+
   const handleSaveInvoice = () => {
     if (invoice.items.length === 0) return;
     
@@ -508,7 +513,7 @@ export default function App() {
         soundEnabled={soundEnabled}
       />
 
-      <CustomerHistoryModal isOpen={isCustomerHistoryOpen} onClose={() => setIsCustomerHistoryOpen(false)} invoices={invoices} repairs={repairs} business={business} onOpenInvoice={(inv) => { setIsCustomerHistoryOpen(false); handleLoadInvoice(inv); }}/>
+      <CustomerHistoryModal isOpen={isCustomerHistoryOpen} onClose={() => setIsCustomerHistoryOpen(false)} invoices={invoices} repairs={repairs} business={business} onOpenInvoice={(inv) => { setIsCustomerHistoryOpen(false); handleLoadInvoice(inv); }} onUpdateInvoice={handleUpdateCustomerInvoice}/>
 
       <RepairsModal isOpen={activeTab === 'repairs'} onClose={() => setActiveTab('dashboard')} business={business} repairs={repairs} setRepairs={setRepairs} lang="en" onToast={showToast} onCreateBill={handleCreateRepairBill}/>
 

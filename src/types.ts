@@ -95,6 +95,13 @@ export interface BusinessProfile {
   readonly poweredBy: string; // "Powered By Sithum Kalhara" - IMMUTABLE
 }
 
+export interface InvoicePayment {
+  id: string;
+  amount: number;
+  date: string;
+  time: string;
+}
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -110,6 +117,7 @@ export interface Invoice {
   serviceCharge: number;
   grandTotal: number;
   paidAmount: number;
+  paymentHistory?: InvoicePayment[];
   changeAmount: number;
   paymentMethod: PaymentMethod;
   notes?: string;
