@@ -19,15 +19,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const appName = storage.getBusinessProfile().appName || storage.getBusinessProfile().name || 'POS';
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const user = storage.login(username, password);
+    setLoading(true);
+    const user = await storage.loginCloud(username, password);
+    setLoading(false);
     if (user) {
       if (soundEnabled) soundEffects.playBeep(880, 0.15);
       onLoginSuccess(user);
@@ -120,7 +123,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/30 flex items-center justify-center gap-2 transition active:scale-[0.98]"
           >
             <Lock className="w-4 h-4" />
-            <span>ලොග් වන්න (Login)</span>
+            <span>{loading ? 'Connecting...' : 'ලොග් වන්න (Login)'}</span>
           </button>
 
           {/* Quick Credential Helper Note */}

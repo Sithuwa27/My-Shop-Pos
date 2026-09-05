@@ -1,5 +1,7 @@
 import { BusinessProfile, Invoice, QuickProduct, AuthUser, ReceiptItem, RepairJob } from '../types';
 import { DEFAULT_BUSINESS_PROFILE, INITIAL_PRODUCTS, INITIAL_INVOICE, POWERED_BY } from '../data/defaultData';
+import { cloudSync, CloudSnapshot } from './cloudSync';
+import { googleSheetsSync, GoogleSnapshot } from './googleSheetsSync';
 
 const KEYS = {
   BUSINESS: 'brave_mobile_profile_v2',
@@ -17,6 +19,29 @@ const DEFAULT_AUTH_CREDS = {
   password: 'brave123',
   name: 'POS Admin',
   role: 'admin' as const,
+};
+
+const currentSnapshot = (): CloudSnapshot => ({
+  business: storage.getBusinessProfile(),
+  products: storage.getProducts(),
+  invoices: storage.getInvoices(),
+  repairs: storage.getRepairs(),
+});
+
+const pushCloud = () => {
+  const snapshot = currentSnapshot();
+  if (googleSheetsSync.isConnected()) {
+    void googleSheetsSync.save(snapshot);
+  } else {
+    void cloudSync.saveSnapshot(snapshot);
+  }
+};
+
+const applyCloudSnapshot = (snapshot: CloudSnapshot) => {
+  if (snapshot.business) localStorage.setItem(KEYS.BUSINESS, JSON.stringify(snapshot.business));
+  localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(snapshot.products || []));
+  localStorage.setItem(KEYS.INVOICES, JSON.stringify(snapshot.invoices || []));
+  localStorage.setItem(KEYS.REPAIRS, JSON.stringify(snapshot.repairs || []));
 };
 
 export const storage = {
@@ -61,6 +86,7 @@ export const storage = {
         poweredBy: POWERED_BY,
       };
       localStorage.setItem(KEYS.BUSINESS, JSON.stringify(cleanProfile));
+      pushCloud();
     } catch (e) {
       console.error(e);
     }
@@ -88,6 +114,7 @@ export const storage = {
       // Ensure only Accessories & Repair
       const filtered = products.filter((p) => p.category === 'Accessories' || p.category === 'Repair');
       localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(filtered));
+      pushCloud();
     } catch (e) {
       console.error(e);
     }
@@ -173,11 +200,13 @@ export const storage = {
       const existing = this.getRepairs();
       const updated = [job, ...existing.filter((r) => r.id !== job.id)].slice(0, 500);
       localStorage.setItem(KEYS.REPAIRS, JSON.stringify(updated));
+      pushCloud();
     } catch (e) { console.error(e); }
   },
 
   deleteRepair(id: string) {
-    try { localStorage.setItem(KEYS.REPAIRS, JSON.stringify(this.getRepairs().filter(r => r.id !== id))); }
+    try { localStorage.setItem(KEYS.REPAIRS, JSON.stringify(this.getRepairs().filter(r => r.id !== id)));
+      pushCloud(); }
     catch (e) { console.error(e); }
   },
 
@@ -207,6 +236,7 @@ export const storage = {
       const previous = existing.find((i) => i.id === invoice.id);
       const updated = [invoice, ...existing.filter((i) => i.id !== invoice.id)];
       localStorage.setItem(KEYS.INVOICES, JSON.stringify(updated.slice(0, 500)));
+      pushCloud();
       this.adjustStockForInvoice(previous, invoice);
       if (invoice.repairJobNumber) {
         const repairs = this.getRepairs();
@@ -226,6 +256,7 @@ export const storage = {
       const existing = this.getInvoices();
       const filtered = existing.filter((i) => i.id !== id);
       localStorage.setItem(KEYS.INVOICES, JSON.stringify(filtered));
+      pushCloud();
     } catch (e) {
       console.error(e);
     }
@@ -277,6 +308,7 @@ export const storage = {
   saveStoredCredentials(creds: typeof DEFAULT_AUTH_CREDS) {
     try {
       localStorage.setItem(KEYS.AUTH_CREDS, JSON.stringify(creds));
+      void cloudSync.updateCredentials(creds.username, creds.password);
     } catch (e) {
       console.error(e);
     }
@@ -306,34 +338,73 @@ export const storage = {
   login(username: string, pass: string): AuthUser | null {
     const creds = this.getStoredCredentials();
     const cleanUser = username.trim().toLowerCase();
-    if (
-      cleanUser === String(creds.username).trim().toLowerCase() &&
-      pass === String(creds.password)
-    ) {
-      const user: AuthUser = {
-        username: creds.username,
-        name: creds.name || 'POS Staff',
-        role: creds.role || 'admin',
-      };
+    if (cleanUser === String(creds.username).trim().toLowerCase() && pass === String(creds.password)) {
+      const user: AuthUser = { username: creds.username, name: creds.name || 'POS Staff', role: creds.role || 'admin' };
       this.setCurrentUser(user);
       return user;
     }
     return null;
   },
 
+  async loginCloud(username: string, pass: string): Promise<AuthUser | null> {
+    try {
+      const result = await cloudSync.login(username, pass, currentSnapshot());
+      applyCloudSnapshot(result.snapshot);
+      this.setCurrentUser(result.user);
+      return result.user;
+    } catch (error) {
+      console.warn('Cloud login failed, trying local login:', error);
+      return this.login(username, pass);
+    }
+  },
+
+  async refreshFromCloud(): Promise<boolean> {
+    try {
+      const snapshot = await cloudSync.getSnapshot();
+      if (!snapshot) return false;
+      applyCloudSnapshot(snapshot);
+      return true;
+    } catch { return false; }
+  },
+
+  async connectGoogleSheets() {
+    const result = await googleSheetsSync.connect(currentSnapshot());
+    const remote = await googleSheetsSync.load();
+    if (remote) applyCloudSnapshot(remote);
+    return result;
+  },
+
+  async refreshFromGoogleSheets(): Promise<boolean> {
+    try {
+      const snapshot = await googleSheetsSync.load();
+      if (!snapshot) return false;
+      applyCloudSnapshot(snapshot);
+      return true;
+    } catch (e) {
+      console.warn('Google Sheets sync unavailable:', e);
+      return false;
+    }
+  },
+
+  isGoogleSheetsConnected() { return googleSheetsSync.isConnected(); },
+  isGoogleSheetsConfigured() { return googleSheetsSync.isConfigured(); },
+  disconnectGoogleSheets() { googleSheetsSync.disconnect(); },
+
   logout() {
     this.setCurrentUser(null);
+    cloudSync.clearSession();
   },
 
   // Clear all invoices history
   clearAllRepairs(): RepairJob[] {
-    try { localStorage.setItem(KEYS.REPAIRS, JSON.stringify([])); return []; }
+    try { localStorage.setItem(KEYS.REPAIRS, JSON.stringify([])); pushCloud(); return []; }
     catch (e) { console.error(e); return []; }
   },
 
   clearAllInvoices(): Invoice[] {
     try {
       localStorage.setItem(KEYS.INVOICES, JSON.stringify([]));
+      pushCloud();
       return [];
     } catch (e) {
       console.error(e);
@@ -345,6 +416,7 @@ export const storage = {
   clearAllProducts(): QuickProduct[] {
     try {
       localStorage.setItem(KEYS.PRODUCTS, JSON.stringify([]));
+      pushCloud();
       return [];
     } catch (e) {
       console.error(e);

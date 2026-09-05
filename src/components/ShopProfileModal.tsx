@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Store, Save, X, ShieldCheck, KeyRound, Lock, User, CheckCircle2, RotateCcw, Type, ImagePlus, Trash2 } from 'lucide-react';
+import { Store, Save, X, ShieldCheck, KeyRound, Lock, User, CheckCircle2, RotateCcw, Type, ImagePlus, Trash2, Cloud, CloudOff, ExternalLink } from 'lucide-react';
 import { BusinessProfile } from '../types';
 import { soundEffects } from '../services/soundEffects';
 import { storage } from '../services/storage';
@@ -26,6 +26,9 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
   const [currentUsername, setCurrentUsername] = useState(storage.getStoredCredentials().username);
   const [newPassword, setNewPassword] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(storage.isGoogleSheetsConnected());
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleMessage, setGoogleMessage] = useState('');
 
   if (!isOpen) return null;
 
@@ -101,6 +104,47 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 font-semibold"
             />
             <p className="text-[10px] text-slate-500 mt-1.5">This name is used for the app/header, login, Items, bill history and other app branding.</p>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-slate-950/70 border border-emerald-500/30">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                  {googleConnected ? <Cloud className="w-4.5 h-4.5" /> : <CloudOff className="w-4.5 h-4.5" />}
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-emerald-300 block">Google Drive / Sheets Cloud Backup</label>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Connect your own Google account. No Client ID setup is needed here. The same Gmail on phone + PC will use the same POS cloud data.</p>
+                  {googleConnected && <p className="text-[10px] text-emerald-400 mt-1 font-semibold">Connected • Google Sheet cloud sync active</p>}
+                  {googleMessage && <p className="text-[10px] text-cyan-300 mt-1">{googleMessage}</p>}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={googleLoading || !storage.isGoogleSheetsConfigured()}
+                onClick={async () => {
+                  setGoogleLoading(true);
+                  setGoogleMessage('');
+                  try {
+                    const result = await storage.connectGoogleSheets();
+                    setGoogleConnected(true);
+                    setGoogleMessage('Google connected successfully. Your POS data is now backed up to Google Sheets.');
+                    if (result?.spreadsheetId) console.log('POS Google Sheet:', result.spreadsheetId);
+                  } catch (e: any) {
+                    setGoogleMessage(e?.message || 'Google connection failed.');
+                  } finally {
+                    setGoogleLoading(false);
+                  }
+                }}
+                className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-[10px] font-bold whitespace-nowrap flex items-center gap-1.5"
+              >
+                <Cloud className="w-3.5 h-3.5" />
+                {googleLoading ? 'Connecting...' : googleConnected ? 'Reconnect' : 'Connect Google'}
+              </button>
+            </div>
+            {!storage.isGoogleSheetsConfigured() && (
+              <p className="text-[10px] text-amber-300 mt-2">Google connection is not enabled for this deployment. Please contact the app owner.</p>
+            )}
           </div>
 
           <div className="p-3 rounded-2xl bg-slate-950/70 border border-violet-500/30">

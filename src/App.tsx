@@ -42,6 +42,25 @@ export default function App() {
   // Authentication State
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => storage.getCurrentUser());
 
+  // Keep the same account visible on phone and PC by pulling the latest Google Sheet data periodically.
+  useEffect(() => {
+    if (!currentUser) return;
+    const refresh = async () => {
+      const refreshed = storage.isGoogleSheetsConnected()
+        ? await storage.refreshFromGoogleSheets()
+        : await storage.refreshFromCloud();
+      if (refreshed) {
+        setBusiness({ ...storage.getBusinessProfile(), receiptLanguage: 'en' });
+        setProducts(storage.getProducts());
+        setInvoices(storage.getInvoices());
+        setRepairs(storage.getRepairs());
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 10000);
+    return () => window.clearInterval(timer);
+  }, [currentUser]);
+
   // Business & Inventory State
   const [business, setBusiness] = useState<BusinessProfile>(() => ({ ...storage.getBusinessProfile(), receiptLanguage: 'en' }));
   const [products, setProducts] = useState<QuickProduct[]>(() => storage.getProducts());
@@ -371,8 +390,12 @@ export default function App() {
         isOpen={!currentUser}
         onLoginSuccess={(user) => {
           setCurrentUser(user);
+          setBusiness({ ...storage.getBusinessProfile(), receiptLanguage: 'en' });
+          setProducts(storage.getProducts());
+          setInvoices(storage.getInvoices());
+          setRepairs(storage.getRepairs());
           setInvoice((prev) => ({ ...prev, cashierName: user.name }));
-          showToast(`ආයුබෝවන්, ${user.name}!`);
+          showToast(`ආයුබෝවන්, ${user.name}! Cloud data loaded.`);
         }}
         soundEnabled={soundEnabled}
       />

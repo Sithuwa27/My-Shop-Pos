@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: my-pos-cloud
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: my-pos-data
+      mountPath: /app/server-data
+      sizeGB: 1
