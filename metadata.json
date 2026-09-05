@@ -1,0 +1,8 @@
+{
+  "name": "Bluetooth Thermal Bill Printer",
+  "description": "POS - බ්ලූටූත් තාප මුද්‍රක, QR සහ Barcode ස්කෑනර්, Accessories සහ Repair කළමනාකරණය සහිත POS පද්ධතිය. Powered By Sithum Kalhara.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
