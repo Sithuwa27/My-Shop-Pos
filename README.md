@@ -82,3 +82,5 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 ```
 
 If the Google OAuth consent screen is in **Testing** mode, only configured test users can connect. For a public multi-user deployment, configure/publish the consent screen as required by Google. The POS never asks users for their Gmail password.
+
+-----
