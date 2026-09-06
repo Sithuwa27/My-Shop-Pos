@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Store, Save, X, ShieldCheck, KeyRound, Lock, User, CheckCircle2, RotateCcw, Type, ImagePlus, Trash2, Cloud, CloudOff, ExternalLink } from 'lucide-react';
 import { BusinessProfile } from '../types';
 import { soundEffects } from '../services/soundEffects';
@@ -29,20 +29,26 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
   const [googleConnected, setGoogleConnected] = useState(storage.isGoogleSheetsConnected());
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleMessage, setGoogleMessage] = useState('');
+  // Keep edits in a local draft. The parent/cloud is updated only when Save is pressed.
+  const [formBusiness, setFormBusiness] = useState<BusinessProfile>(business);
+
+  useEffect(() => {
+    if (isOpen) setFormBusiness(business);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleChange = (field: keyof BusinessProfile, value: any) => {
-    setBusiness((prev) => ({ ...prev, [field]: value, poweredBy: POWERED_BY }));
+    setFormBusiness((prev) => ({ ...prev, [field]: value, poweredBy: POWERED_BY }));
   };
 
   const handleSave = () => {
-    storage.saveBusinessProfile({ ...business, poweredBy: POWERED_BY });
+    setBusiness({ ...formBusiness, poweredBy: POWERED_BY });
     if (newPassword.trim()) {
       storage.saveStoredCredentials({
         username: currentUsername.trim() || 'brave',
         password: newPassword.trim(),
-        name: business.name || 'Brave Admin',
+        name: formBusiness.name || 'Brave Admin',
         role: 'admin',
       });
       setPasswordSuccess(true);
@@ -98,7 +104,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
             </label>
             <input
               type="text"
-              value={business.appName ?? business.name ?? ''}
+              value={formBusiness.appName ?? business.name ?? ''}
               onChange={(e) => handleChange('appName', e.target.value)}
               placeholder="e.g. My POS System"
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 font-semibold"
@@ -155,14 +161,14 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
                 </label>
                 <p className="text-[10px] text-slate-500">Upload a logo to show at the top of printed receipts.</p>
               </div>
-              {business.logoDataUrl && (
-                <img src={business.logoDataUrl} alt="Logo preview" className="w-14 h-14 object-contain rounded-xl bg-white p-1 border border-slate-700" />
+              {formBusiness.logoDataUrl && (
+                <img src={formBusiness.logoDataUrl} alt="Logo preview" className="w-14 h-14 object-contain rounded-xl bg-white p-1 border border-slate-700" />
               )}
             </div>
             <div className="flex gap-2 mt-2">
               <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold cursor-pointer">
                 <ImagePlus className="w-4 h-4" />
-                {business.logoDataUrl ? 'Change Logo' : 'Add Logo'}
+                {formBusiness.logoDataUrl ? 'Change Logo' : 'Add Logo'}
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
@@ -187,15 +193,15 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
                   }}
                 />
               </label>
-              {business.logoDataUrl && (
+              {formBusiness.logoDataUrl && (
                 <button type="button" onClick={() => { handleChange('logoDataUrl', ''); handleChange('showLogo', false); }} className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-bold">
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
             </div>
-            {business.logoDataUrl && (
+            {formBusiness.logoDataUrl && (
               <label className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
-                <input type="checkbox" checked={business.showLogo !== false} onChange={(e) => handleChange('showLogo', e.target.checked)} />
+                <input type="checkbox" checked={formBusiness.showLogo !== false} onChange={(e) => handleChange('showLogo', e.target.checked)} />
                 Show logo on receipt
               </label>
             )}
@@ -207,7 +213,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
             </label>
             <input
               type="text"
-              value={business.name}
+              value={formBusiness.name}
               onChange={(e) => handleChange('name', e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 font-semibold"
             />
@@ -219,7 +225,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
             </label>
             <input
               type="text"
-              value={business.sinhalaName}
+              value={formBusiness.sinhalaName}
               onChange={(e) => handleChange('sinhalaName', e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
             />
@@ -231,7 +237,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
             </label>
             <input
               type="text"
-              value={business.tagline}
+              value={formBusiness.tagline}
               onChange={(e) => handleChange('tagline', e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
             />
@@ -244,7 +250,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
               </label>
               <input
                 type="text"
-                value={business.phone}
+                value={formBusiness.phone}
                 onChange={(e) => handleChange('phone', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
               />
@@ -256,7 +262,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
               </label>
               <input
                 type="text"
-                value={business.mobile}
+                value={formBusiness.mobile}
                 onChange={(e) => handleChange('mobile', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
               />
@@ -269,7 +275,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
             </label>
             <input
               type="text"
-              value={business.address}
+              value={formBusiness.address}
               onChange={(e) => handleChange('address', e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
             />
@@ -282,7 +288,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
               </label>
               <input
                 type="text"
-                value={business.taxOrRegNumber}
+                value={formBusiness.taxOrRegNumber}
                 onChange={(e) => handleChange('taxOrRegNumber', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
               />
@@ -294,7 +300,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
               </label>
               <input
                 type="text"
-                value={business.currencySymbol}
+                value={formBusiness.currencySymbol}
                 onChange={(e) => handleChange('currencySymbol', e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 font-mono"
               />
@@ -307,7 +313,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
             </label>
             <input
               type="text"
-              value={business.receiptFooter}
+              value={formBusiness.receiptFooter}
               onChange={(e) => handleChange('receiptFooter', e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
             />
@@ -319,7 +325,7 @@ export const ShopProfileModal: React.FC<ShopProfileModalProps> = ({
             </label>
             <input
               type="text"
-              value={business.qrCodeData}
+              value={formBusiness.qrCodeData}
               onChange={(e) => handleChange('qrCodeData', e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 font-mono"
             />
