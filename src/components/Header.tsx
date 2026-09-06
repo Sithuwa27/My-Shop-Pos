@@ -13,7 +13,8 @@ import {
   LogOut,
   User,
   ShieldCheck,
-  Smartphone
+  Smartphone,
+  QrCode
 } from 'lucide-react';
 import { BluetoothDeviceState, AuthUser } from '../types';
 import { t } from '../utils/translations';
@@ -29,6 +30,7 @@ interface HeaderProps {
   activeTab: 'dashboard' | 'bill' | 'history' | 'products' | 'repairs' | 'profile' | 'printer';
   setActiveTab: (tab: 'dashboard' | 'bill' | 'history' | 'products' | 'repairs' | 'profile' | 'printer') => void;
   onOpenPrinterModal: () => void;
+  onOpenCodeGenerator: () => void;
   currentUser: AuthUser | null;
   onLogout: () => void;
   appName?: string;
@@ -43,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   onOpenPrinterModal,
+  onOpenCodeGenerator,
   currentUser,
   onLogout,
   appName = 'POS',
@@ -107,6 +110,16 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
               </>
             )}
+          </button>
+
+          {/* QR / Barcode Generator */}
+          <button
+            onClick={onOpenCodeGenerator}
+            className="hidden sm:flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition"
+            title="Generate and print QR / Barcode"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>QR / Barcode</span>
           </button>
 
           {/* Sound Toggle */}
@@ -188,6 +201,14 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Package className="w-3.5 h-3.5" />
           <span>{strings.productsCatalog}</span>
+        </button>
+
+        <button
+          onClick={onOpenCodeGenerator}
+          className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl font-medium whitespace-nowrap transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+        >
+          <QrCode className="w-3.5 h-3.5" />
+          <span>QR / Barcode</span>
         </button>
 
         <button

@@ -28,6 +28,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { Dashboard } from './components/Dashboard';
 import { RepairsModal } from './components/RepairsModal';
 import { CustomerHistoryModal } from './components/CustomerHistoryModal';
+import { CodeGeneratorModal } from './components/CodeGeneratorModal';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { t } from './utils/translations';
 
@@ -100,6 +101,7 @@ export default function App() {
   const [isProductsModalOpen, setIsProductsModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isCustomerHistoryOpen, setIsCustomerHistoryOpen] = useState(false);
+  const [isCodeGeneratorOpen, setIsCodeGeneratorOpen] = useState(false);
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -410,6 +412,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={handleTabChange}
         onOpenPrinterModal={() => setIsPrinterModalOpen(true)}
+        onOpenCodeGenerator={() => setIsCodeGeneratorOpen(true)}
         currentUser={currentUser}
         onLogout={handleLogout}
         appName={business.appName || business.name}
@@ -473,6 +476,7 @@ export default function App() {
         onOpenResetModal={() => setIsResetModalOpen(true)}
         onOpenInstallPrompt={triggerPWAInstall}
         onOpenCustomerHistory={() => setIsCustomerHistoryOpen(true)}
+        onOpenCodeGenerator={() => setIsCodeGeneratorOpen(true)}
         onExportBackup={handleExportBackup}
         onImportBackup={handleImportBackup}
         lang={lang}
@@ -537,6 +541,8 @@ export default function App() {
       />
 
       <CustomerHistoryModal isOpen={isCustomerHistoryOpen} onClose={() => setIsCustomerHistoryOpen(false)} invoices={invoices} repairs={repairs} business={business} onOpenInvoice={(inv) => { setIsCustomerHistoryOpen(false); handleLoadInvoice(inv); }} onUpdateInvoice={handleUpdateCustomerInvoice}/>
+
+      <CodeGeneratorModal isOpen={isCodeGeneratorOpen} onClose={() => setIsCodeGeneratorOpen(false)} business={business} btState={btState} soundEnabled={soundEnabled} />
 
       <RepairsModal isOpen={activeTab === 'repairs'} onClose={() => setActiveTab('dashboard')} business={business} repairs={repairs} setRepairs={setRepairs} lang="en" onToast={showToast} onCreateBill={handleCreateRepairBill}/>
 

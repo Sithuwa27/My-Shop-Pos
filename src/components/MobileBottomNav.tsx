@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Home, Receipt, PackagePlus, Wrench, MoreHorizontal, X, Store, Printer, Smartphone, Volume2, VolumeX, RotateCcw, FileClock, UserRound } from 'lucide-react';
+import { Home, Receipt, PackagePlus, Wrench, MoreHorizontal, X, Store, Printer, Smartphone, Volume2, VolumeX, RotateCcw, FileClock, UserRound, QrCode } from 'lucide-react';
 import { BusinessProfile, AppTheme } from '../types';
 
 interface Props {
@@ -7,11 +7,12 @@ interface Props {
   mobileViewMode:'editor'|'preview'; setMobileViewMode:(m:'editor'|'preview')=>void;
   onTabChange:(t:'dashboard'|'bill'|'history'|'products'|'repairs'|'profile'|'printer')=>void;
   itemsCount:number; grandTotal:number; currencySymbol:string; onOpenResetModal:()=>void; onOpenInstallPrompt:()=>void; onOpenCustomerHistory:()=>void; onExportBackup:()=>void; onImportBackup:(file:File)=>void;
+  onOpenCodeGenerator:()=>void;
   lang:'si'|'en'; setLang:(l:'si'|'en')=>void; soundEnabled:boolean; setSoundEnabled:(v:boolean)=>void;
   business?:BusinessProfile; onUpdateBusiness?:(b:BusinessProfile)=>void;
 }
 
-export const MobileBottomNav:React.FC<Props>=({activeTab,onTabChange,onOpenResetModal,onOpenInstallPrompt,onOpenCustomerHistory,onExportBackup,onImportBackup,lang,setLang,soundEnabled,setSoundEnabled,business,onUpdateBusiness})=>{
+export const MobileBottomNav:React.FC<Props>=({activeTab,onTabChange,onOpenResetModal,onOpenInstallPrompt,onOpenCustomerHistory,onOpenCodeGenerator,onExportBackup,onImportBackup,lang,setLang,soundEnabled,setSoundEnabled,business,onUpdateBusiness})=>{
  const [more,setMore]=useState(false); const si=false;
  const go=(tab:Props['activeTab'])=>{setMore(false);onTabChange(tab)};
  const theme=(id:AppTheme)=>onUpdateBusiness?.({...business!,appTheme:id});
@@ -33,6 +34,7 @@ export const MobileBottomNav:React.FC<Props>=({activeTab,onTabChange,onOpenReset
        <button onClick={()=>go('history')} className="morebtn"><FileClock/><span>Bill History</span></button>
        <button onClick={()=>{setMore(false);onOpenCustomerHistory()}} className="morebtn"><UserRound/><span>Customer History</span></button>
        <button onClick={()=>go('printer')} className="morebtn"><Printer/><span>Printer</span></button>
+       <button onClick={()=>{setMore(false);onOpenCodeGenerator()}} className="morebtn"><QrCode/><span>QR / Barcode</span></button>
        <button onClick={()=>go('profile')} className="morebtn"><Store/><span>Shop Profile</span></button>
        <button onClick={onOpenInstallPrompt} className="morebtn"><Smartphone/><span>Install App</span></button>
        <button onClick={onExportBackup} className="morebtn"><FileClock/><span>Export Backup</span></button>
