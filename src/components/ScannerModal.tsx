@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Camera, X, RefreshCw, AlertCircle, Scan, Keyboard, CheckCircle2, Barcode, QrCode } from 'lucide-react';
+import { X, AlertCircle, Scan, Keyboard, CheckCircle2, Barcode, QrCode } from 'lucide-react';
 import { soundEffects } from '../services/soundEffects';
 import { storage } from '../services/storage';
 
@@ -28,72 +28,10 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [scanMode, setScanMode] = useState<'barcode' | 'qr'>('barcode');
-  const [torchOn, setTorchOn] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanHandledRef = useRef(false);
   const html5QrCodeId = 'qr-reader-container';
-
-  const tuneCamera = async () => {
-    const video = document.querySelector(`#${html5QrCodeId} video`) as HTMLVideoElement | null;
-    videoRef.current = video;
-    if (!video) return;
-
-    // Keep the browser's native camera rendering sharp and stable on portrait phones.
-    video.setAttribute('playsinline', 'true');
-    video.setAttribute('autoplay', 'true');
-    video.muted = true;
-    video.style.width = '100%';
-    video.style.height = '100%';
-    video.style.objectFit = 'cover';
-    video.style.objectPosition = 'center';
-    video.style.filter = 'none';
-    video.style.transform = 'translateZ(0)';
-
-    const stream = video.srcObject as MediaStream | null;
-    const track = stream?.getVideoTracks?.()[0];
-    if (!track) return;
-
-    const caps = track.getCapabilities?.() as MediaTrackCapabilities & {
-      torch?: boolean;
-      zoom?: { min: number; max: number; step: number };
-      focusMode?: string[];
-      exposureMode?: string[];
-    };
-
-    // Autofocus is the main blur fix. Only request modes the device advertises.
-    const advanced: MediaTrackConstraintSet[] = [];
-    if (caps.focusMode?.includes('continuous')) {
-      advanced.push({ focusMode: 'continuous' } as any);
-    }
-    if (caps.exposureMode?.includes('continuous')) {
-      advanced.push({ exposureMode: 'continuous' } as any);
-    }
-    if (caps.zoom) {
-      const safeZoom = Math.max(caps.zoom.min, Math.min(caps.zoom.max, zoom));
-      advanced.push({ zoom: safeZoom } as any);
-    }
-    if (caps.torch) advanced.push({ torch: torchOn } as any);
-
-    if (advanced.length) {
-      try {
-        await track.applyConstraints({ advanced });
-      } catch {
-        // Some Android browsers expose capabilities but reject one optional control.
-        // The camera should continue normally without those controls.
-      }
-    }
-
-    // Give autofocus a moment, then re-apply continuous focus when supported.
-    if (caps.focusMode?.includes('continuous')) {
-      window.setTimeout(() => {
-        try {
-          void track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] });
-        } catch { /* optional camera control */ }
-      }, 450);
-    }
-  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -129,11 +67,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                 Html5QrcodeSupportedFormats.ITF,
               ]
             : [Html5QrcodeSupportedFormats.QR_CODE],
-          // Chrome/Android can use the native BarcodeDetector when available,
-          // which makes QR/barcode detection noticeably faster.
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-          },
           verbose: false,
         });
 
@@ -144,38 +77,18 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         // wide, while QR codes are square. A function lets html5-qrcode choose
         // a safe scan area for both types on phone screens.
         const config = {
-          // Barcode-first scanning: a wider crop matches EAN/UPC/Code128 labels
-          // and avoids wasting decode work on the unused parts of the camera frame.
-          fps: scanMode === 'barcode' ? 15 : 12,
-          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            if (scanMode === 'barcode') {
-              const width = Math.floor(Math.min(viewfinderWidth * 0.92, 560));
-              const height = Math.floor(Math.min(viewfinderHeight * 0.30, 170));
-              return { width, height };
-            }
-            const size = Math.floor(Math.min(viewfinderWidth * 0.72, viewfinderHeight * 0.58, 360));
-            return { width: size, height: size };
-          },
-          // Let the browser keep the phone's natural aspect ratio; forcing 16:9
-          // can crop the useful barcode area on portrait phones.
+          fps: scanMode === 'barcode' ? 12 : 10,
+          qrbox: scanMode === 'barcode'
+            ? { width: 320, height: 120 }
+            : { width: 260, height: 260 },
           disableFlip: true,
-          // 1280x720 is usually a better mobile scanning sweet spot than 1080p:
-          // enough detail for retail barcodes while reducing autofocus/CPU lag.
-          videoConstraints: {
-            // Do not force 16:9. Portrait Android/iPhone cameras often expose
-            // a portrait stream; forcing a landscape ratio can crop/resample it.
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280, min: 640 },
-            height: { ideal: 720, min: 480 },
-            frameRate: { ideal: 24, max: 30 },
-          } as MediaTrackConstraints,
         };
 
         // Prefer the environment/rear camera. The config also requests HD video
         // and continuous autofocus where the device/browser supports it.
         try {
           await scanner.start(
-            { facingMode: { ideal: 'environment' } },
+            { facingMode: 'environment' },
             config,
           async (decodedText) => {
             const code = decodedText.trim();
@@ -196,7 +109,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             // Per-frame decode failures are normal; keep scanning silently.
           }
         );
-        await tuneCamera();
         } catch (environmentError) {
           // Fallback for browsers that do not accept exact facingMode.
           const cameras = await Html5Qrcode.getCameras();
@@ -214,7 +126,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             onScan(code);
             onClose();
           }, () => {});
-          await tuneCamera();
         }
       } catch (err: any) {
         console.warn('Camera scanner start error:', err);
@@ -232,12 +143,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
       stopScanner();
     };
   }, [isOpen, scanMode]);
-
-  useEffect(() => {
-    if (!isOpen || !isScanning) return;
-    const timer = window.setTimeout(() => { void tuneCamera(); }, 250);
-    return () => window.clearTimeout(timer);
-  }, [torchOn, zoom, isOpen, isScanning]);
 
   const stopScanner = async () => {
     try {
@@ -334,31 +239,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
               <div className="px-3 py-1.5 rounded-full bg-black/60 border border-white/10 backdrop-blur text-[10px] text-white/80">
                 Keep the code sharp • move slightly closer if blurry
               </div>
-            </div>
-          )}
-
-          {/* Camera controls */}
-          {isScanning && (
-            <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTorchOn(v => !v)}
-                className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold backdrop-blur border ${torchOn ? 'bg-amber-400/90 text-slate-950 border-amber-300' : 'bg-slate-950/65 text-white border-white/20'}`}
-                title="Toggle flashlight"
-              >
-                {torchOn ? '🔦 ON' : '🔦'}
-              </button>
-              <select
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="px-2 py-1.5 rounded-xl bg-slate-950/65 text-white text-[10px] font-bold border border-white/20 backdrop-blur outline-none"
-                aria-label="Camera zoom"
-              >
-                <option value={1}>1×</option>
-                <option value={1.5}>1.5×</option>
-                <option value={2}>2×</option>
-                <option value={2.5}>2.5×</option>
-              </select>
             </div>
           )}
 
