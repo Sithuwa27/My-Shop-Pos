@@ -31,49 +31,108 @@ type CodeType = 'qr' | 'barcode';
 
 type LabelSize = 'small' | 'medium' | 'large';
 
-const CODE128_PATTERNS = ["BaBbBb","BbBaBb","BbBbBa","AbAbBc","AbAcBb","AcAbBb","AbBbAc","AbBcAb","AcBbAb","BbAbAc","BbAcAb","BcAbAb","AaBbCb","AbBaCb","AbBbCa","AaCbBb","AbCaBb","AbCbBa","BbCbAa","BbAaCb","BbAbCa","BaCbAb","BbCaAb","CaBaCa","CaAbBb","CbAaBb","CbAbBa","CaBbAb","CbBaAb","CbBbAa","BaBaBc","BaBcBa","BcBaBa","AaAcBc","AcAaBc","AcAcBa","AaBcAc","AcBaAc","AcBcAa","BaAcAc","BcAaAc","BcAcAa","AaBaCc","AaBcCa","AcBaCa","AaCaBc","AaCcBa","AcCaBa","CaCaBa","BaAcCa","BcAaCa","BaCaAc","BaCcAa","BaCaCa","CaAaBc","CaAcBa","CcAaBa","CaBaAc","CaBcAa","CcBaAa","CaDaAa","BbAdAa","DcAaAa","AaAbBd","AaAdBb","AbAaBd","AbAdBa","AdAaBb","AdAbBa","AaBbAd","AaBdAb","AbBaAd","AbBdAa","AdBaAb","AdBbAa","BdAbAa","BbAaAd","DaCaAa","BdAaAb","AcDaAa","AaAbDb","AbAaDb","AbAbDa","AaDbAb","AbDaAb","AbDbAa","DaAbAb","DbAaAb","DbAbAa","BaBaDa","BaDaBa","DaBaBa","AaAaDc","AaAcDa","AcAaDa","AaDaAc","AaDcAa","DaAaAc","DaAcAa","AaCaDa","AaDaCa","CaAaDa","DaAaCa","BaAdAb","BaAbAd","BaAbCb","BcCaAaB"];
+const CODE128_WIDTHS = [
+  '212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','233111'
+] as const;
 
-const createBarcodeCanvas = (value: string, width: number, height: number, barHeight: number): HTMLCanvasElement => {
+const CODE128_STOP = '2331112';
+
+const code128ValueToWidths = (code: number): string => {
+  if (code === 106) return CODE128_STOP;
+  if (code < 0 || code > 105) throw new Error('Invalid Code 128 symbol.');
+  return CODE128_WIDTHS[code];
+};
+
+/**
+ * Standards-compliant Code 128 renderer.
+ * - Code 128C for an even-length numeric value (best density for product codes)
+ * - Code 128B for printable ASCII / alphanumeric values
+ * - checksum is calculated over the actual symbol values
+ * - 10X quiet zone on both sides
+ * - integer module width only, pure 1-bit black/white output for thermal printers
+ */
+const encodeCode128 = (value: string): number[] => {
+  const raw = value.trim();
+  if (!raw) throw new Error('Barcode value is empty.');
+
+  const numeric = /^\d+$/.test(raw);
+  const useC = numeric && raw.length % 2 === 0;
+  const symbols: number[] = [useC ? 105 : 104]; // START C / START B
+
+  if (useC) {
+    for (let i = 0; i < raw.length; i += 2) {
+      const pair = Number(raw.slice(i, i + 2));
+      if (pair < 0 || pair > 99) throw new Error('Invalid numeric Code 128 value.');
+      symbols.push(pair);
+    }
+  } else {
+    for (let i = 0; i < raw.length; i++) {
+      const n = raw.charCodeAt(i);
+      if (n < 32 || n > 126) {
+        throw new Error('Use letters, numbers and normal keyboard symbols only.');
+      }
+      symbols.push(n - 32);
+    }
+  }
+
+  let checksum = symbols[0];
+  for (let i = 1; i < symbols.length; i++) checksum += symbols[i] * i;
+  symbols.push(checksum % 103);
+  symbols.push(106);
+  return symbols;
+};
+
+const code128TotalModules = (value: string): number => {
+  const symbols = encodeCode128(value);
+  return 20 + symbols.reduce((sum, code) => {
+    return sum + code128ValueToWidths(code).split('').reduce((n, ch) => n + Number(ch), 0);
+  }, 0);
+};
+
+const createBarcodeCanvas = (value: string, width: number, barHeight: number): HTMLCanvasElement => {
+  const symbols = encodeCode128(value);
+  const quietModules = 10;
+  const patternModules = symbols.reduce((sum, code) => {
+    return sum + code128ValueToWidths(code).split('').reduce((n, ch) => n + Number(ch), 0);
+  }, 0);
+  const totalModules = patternModules + quietModules * 2;
+
+  // Thermal printers are normally ~203 dpi. 2 dots/module is much more
+  // reliable for scanners than a fractional or anti-aliased bar width.
+  let moduleWidth = 2;
+  if (totalModules * moduleWidth > width) moduleWidth = 1;
+  const actualWidth = totalModules * moduleWidth;
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(width));
-  canvas.height = Math.max(1, Math.round(height));
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas;
-  ctx.fillStyle = '#fff';
+  canvas.width = Math.max(width, actualWidth);
+  canvas.height = Math.max(100, barHeight + 36);
+
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) throw new Error('Canvas is not supported.');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const codes = [104];
-  for (const char of value) {
-    const code = char.charCodeAt(0);
-    if (code < 32 || code > 126) throw new Error('Barcode supports printable ASCII characters only.');
-    codes.push(code - 32);
-  }
-  let checksum = codes[0];
-  for (let i = 1; i < codes.length; i++) checksum += codes[i] * i;
-  codes.push(checksum % 103);
-  codes.push(106);
-
-  const widthFor = (ch: string) => ch.toUpperCase() === 'A' ? 1 : ch.toUpperCase() === 'B' ? 2 : ch.toUpperCase() === 'C' ? 3 : 4;
-  const moduleCount = codes.reduce((sum, code) => sum + [...CODE128_PATTERNS[code]].reduce((n, ch) => n + widthFor(ch), 0), 0);
-  const quietModules = 10;
-  const moduleWidth = Math.max(1, Math.floor(canvas.width / (moduleCount + quietModules * 2)));
-  const actualWidth = (moduleCount + quietModules * 2) * moduleWidth;
-  const left = Math.max(0, Math.floor((canvas.width - actualWidth) / 2));
-  const barTop = 8;
+  const left = Math.floor((canvas.width - actualWidth) / 2);
   let x = left + quietModules * moduleWidth;
   let black = true;
-  ctx.fillStyle = '#000';
-  for (const code of codes) {
-    for (const ch of CODE128_PATTERNS[code]) {
-      const w = widthFor(ch) * moduleWidth;
-      if (black) ctx.fillRect(x, barTop, w, barHeight);
+  ctx.fillStyle = '#000000';
+
+  for (const code of symbols) {
+    const pattern = code128ValueToWidths(code);
+    for (const ch of pattern) {
+      const w = Number(ch) * moduleWidth;
+      if (black) ctx.fillRect(x, 4, w, barHeight);
       x += w;
       black = !black;
     }
   }
-  ctx.font = `${Math.max(12, Math.round(canvas.width / 22))}px monospace`;
+
+  // Human-readable text is kept outside the bars and never overlaps them.
+  ctx.fillStyle = '#000000';
+  ctx.font = `bold ${Math.max(12, Math.min(18, Math.round(width / 24)))}px monospace`;
   ctx.textAlign = 'center';
-  ctx.fillText(value, canvas.width / 2, Math.min(canvas.height - 8, barTop + barHeight + 28));
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(value, canvas.width / 2, canvas.height - 6);
   return canvas;
 };
 
@@ -83,7 +142,7 @@ const randomCode = (type: CodeType) => {
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes);
   else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
   const suffix = Array.from(bytes, b => chars[b % chars.length]).join('');
-  return type === 'barcode' ? `ACC-${suffix}` : `https://shop.local/item/${suffix}`;
+  return type === 'barcode' ? `AC-${suffix.slice(0, 8)}` : `https://shop.local/item/${suffix}`;
 };
 
 export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
@@ -106,6 +165,7 @@ export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
 
   const paperWidth = business.paperWidth === '58mm' ? 384 : 576;
   const columns = business.paperWidth === '80mm' && twoAcross ? 2 : 1;
+  const [previewColumns, setPreviewColumns] = useState(columns);
   const labelWidth = Math.floor(paperWidth / columns);
   const sizeScale = labelSize === 'small' ? 0.68 : labelSize === 'large' ? 0.94 : 0.82;
 
@@ -114,6 +174,7 @@ export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
     setStatus(null);
     setGeneratedValue('');
     setPreviewUrl('');
+    setPreviewColumns(columns);
     canvasRef.current = null;
   }, [isOpen]);
 
@@ -121,14 +182,15 @@ export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
     if (business.paperWidth === '58mm') setTwoAcross(false);
   }, [business.paperWidth]);
 
-  const buildSingleLabel = async (raw: string): Promise<HTMLCanvasElement> => {
-    const qrSize = Math.max(120, Math.round(labelWidth * sizeScale));
-    const barcodeWidth = Math.max(120, Math.round(labelWidth * sizeScale));
+  const buildSingleLabel = async (raw: string, targetLabelWidth = labelWidth): Promise<HTMLCanvasElement> => {
+    const qrSize = Math.max(120, Math.round(targetLabelWidth * sizeScale));
+    const barcodeWidth = Math.max(120, Math.round(targetLabelWidth * sizeScale));
+    const barHeight = Math.round(86 * (labelSize === 'small' ? 0.82 : labelSize === 'large' ? 1.22 : 1));
     const codeHeight = codeType === 'qr'
       ? Math.round(qrSize + 48)
-      : Math.round(28 + 112 * (labelSize === 'small' ? 0.75 : labelSize === 'large' ? 1.2 : 1));
+      : Math.round(barHeight + 36);
     const canvas = document.createElement('canvas');
-    canvas.width = labelWidth;
+    canvas.width = targetLabelWidth;
     canvas.height = codeHeight + 16;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas is not supported.');
@@ -150,21 +212,31 @@ export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
       const x = Math.floor((canvas.width - qrSize) / 2);
       ctx.drawImage(img, x, 8, qrSize, qrSize);
       ctx.fillStyle = '#000';
-      ctx.font = `bold ${Math.max(12, Math.round(labelWidth / 23))}px monospace`;
+      ctx.font = `bold ${Math.max(12, Math.round(targetLabelWidth / 23))}px monospace`;
       ctx.textAlign = 'center';
       ctx.fillText(raw.slice(0, 34), canvas.width / 2, qrSize + 30);
     } else {
-      const barHeight = Math.round(112 * (labelSize === 'small' ? 0.75 : labelSize === 'large' ? 1.2 : 1));
-      const barcodeCanvas = createBarcodeCanvas(raw, barcodeWidth, codeHeight, barHeight);
-      ctx.drawImage(barcodeCanvas, Math.floor((canvas.width - barcodeWidth) / 2), 0, barcodeWidth, codeHeight);
+      const barcodeCanvas = createBarcodeCanvas(raw, barcodeWidth, barHeight);
+      const drawWidth = Math.min(canvas.width, barcodeCanvas.width);
+      const drawHeight = barcodeCanvas.height;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(barcodeCanvas, Math.floor((canvas.width - drawWidth) / 2), 0, drawWidth, drawHeight);
     }
     return canvas;
   };
 
   const buildPrintSheet = async (raw: string): Promise<HTMLCanvasElement> => {
-    const single = await buildSingleLabel(raw);
-    const rows = Math.ceil(quantity / columns);
-    const gap = columns === 2 ? 2 : 0;
+    // Keep at least 2 dots per module whenever possible. Long barcodes are
+    // automatically printed as one full-width label instead of being squeezed.
+    let effectiveColumns = columns;
+    if (codeType === 'barcode' && effectiveColumns === 2 && code128TotalModules(raw) * 2 > labelWidth) {
+      effectiveColumns = 1;
+      setStatus('Long barcode: switched to one full-width label for reliable scanning.');
+    }
+    const effectiveLabelWidth = Math.floor(paperWidth / effectiveColumns);
+    const single = await buildSingleLabel(raw, effectiveLabelWidth);
+    const rows = Math.ceil(quantity / effectiveColumns);
+    const gap = effectiveColumns === 2 ? 2 : 0;
     const sheet = document.createElement('canvas');
     sheet.width = paperWidth;
     sheet.height = single.height * rows + Math.max(0, rows - 1) * gap;
@@ -173,9 +245,9 @@ export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, sheet.width, sheet.height);
     for (let i = 0; i < quantity; i++) {
-      const row = Math.floor(i / columns);
-      const col = i % columns;
-      ctx.drawImage(single, col * labelWidth, row * (single.height + gap));
+      const row = Math.floor(i / effectiveColumns);
+      const col = i % effectiveColumns;
+      ctx.drawImage(single, col * effectiveLabelWidth, row * (single.height + gap));
     }
     return sheet;
   };
@@ -189,6 +261,8 @@ export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
     try {
       setStatus(null);
       const sheet = await buildPrintSheet(raw);
+      const actualColumns = codeType === 'barcode' && columns === 2 && code128TotalModules(raw) * 2 > labelWidth ? 1 : columns;
+      setPreviewColumns(actualColumns);
       canvasRef.current = sheet;
       setGeneratedValue(raw);
       setPreviewUrl(sheet.toDataURL('image/png'));
@@ -211,6 +285,7 @@ export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
     setValue('');
     setGeneratedValue('');
     setPreviewUrl('');
+    setPreviewColumns(columns);
     canvasRef.current = null;
     setStatus(null);
   };
@@ -355,7 +430,7 @@ export const CodeGeneratorModal: React.FC<CodeGeneratorModalProps> = ({
 
             <div className="rounded-3xl border border-slate-800 bg-slate-950 p-3">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Preview · {business.paperWidth} · {columns} across · {quantity} copies</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Preview · {business.paperWidth} · {previewColumns} across · {quantity} copies</span>
                 {generatedValue && <button onClick={() => void copyValue()} className="flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1 text-[10px] text-slate-300"><Copy className="h-3 w-3" /> Copy</button>}
               </div>
               <div className="flex max-h-[58vh] min-h-[280px] items-start justify-center overflow-auto rounded-2xl bg-white p-2">

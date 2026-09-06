@@ -42,8 +42,8 @@
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    width: 58mm !important;
-    max-width: 58mm !important;
+    width: var(--code-paper-width, 58mm) !important;
+    max-width: var(--code-paper-width, 58mm) !important;
     margin: 0 !important;
     padding: 3mm !important;
     background: #ffffff !important;
