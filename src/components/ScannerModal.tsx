@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { AlertCircle, Barcode, CheckCircle2, Keyboard, QrCode, Scan, X } from 'lucide-react';
+import { Camera, X, RefreshCw, AlertCircle, Scan, Keyboard, CheckCircle2, Barcode, QrCode } from 'lucide-react';
 import { soundEffects } from '../services/soundEffects';
 import { storage } from '../services/storage';
 
@@ -14,20 +14,12 @@ interface ScannerModalProps {
   appName?: string;
 }
 
-type ScanMode = 'barcode' | 'qr';
-
-type CameraCapabilities = MediaTrackCapabilities & {
-  torch?: boolean;
-  zoom?: { min: number; max: number; step?: number };
-  focusMode?: string[];
-};
-
 export const ScannerModal: React.FC<ScannerModalProps> = ({
   isOpen,
   onClose,
   onScan,
   title = 'QR / Barcode Scanner',
-  subtitle = 'Keep the code inside the frame and hold the phone steady',
+  subtitle = 'Hold the barcode inside the frame • keep the phone steady',
   soundEnabled = true,
   appName = storage.getBusinessProfile().appName || storage.getBusinessProfile().name || 'POS',
 }) => {
@@ -35,121 +27,110 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
-  const [scanMode, setScanMode] = useState<ScanMode>('barcode');
+  const [scanMode, setScanMode] = useState<'barcode' | 'qr'>('barcode');
   const [torchOn, setTorchOn] = useState(false);
   const [zoom, setZoom] = useState(1);
-
-  const scannerRef = useRef<Html5Qrcode | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanHandledRef = useRef(false);
-  const stoppingRef = useRef(false);
   const html5QrCodeId = 'qr-reader-container';
-
-  const stopScanner = async () => {
-    if (stoppingRef.current) return;
-    stoppingRef.current = true;
-
-    const scanner = scannerRef.current;
-    scannerRef.current = null;
-
-    try {
-      if (scanner?.isScanning) await scanner.stop();
-      try {
-        scanner?.clear();
-      } catch {
-        // The scanner DOM may already have been removed during modal cleanup.
-      }
-    } catch {
-      // Ignore camera cleanup errors.
-    } finally {
-      videoRef.current = null;
-      setIsScanning(false);
-      stoppingRef.current = false;
-    }
-  };
 
   const tuneCamera = async () => {
     const video = document.querySelector(`#${html5QrCodeId} video`) as HTMLVideoElement | null;
     videoRef.current = video;
+    if (!video) return;
 
-    const stream = video?.srcObject as MediaStream | null;
+    // Keep the browser's native camera rendering sharp and stable on portrait phones.
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('autoplay', 'true');
+    video.muted = true;
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.objectFit = 'cover';
+    video.style.objectPosition = 'center';
+    video.style.filter = 'none';
+    video.style.transform = 'translateZ(0)';
+
+    const stream = video.srcObject as MediaStream | null;
     const track = stream?.getVideoTracks?.()[0];
     if (!track) return;
 
-    try {
-      const capabilities = track.getCapabilities?.() as CameraCapabilities | undefined;
-      const advanced: MediaTrackConstraintSet[] = [];
+    const caps = track.getCapabilities?.() as MediaTrackCapabilities & {
+      torch?: boolean;
+      zoom?: { min: number; max: number; step: number };
+      focusMode?: string[];
+      exposureMode?: string[];
+    };
 
-      if (capabilities?.focusMode?.includes?.('continuous')) {
-        advanced.push({ focusMode: 'continuous' } as MediaTrackConstraintSet);
+    // Autofocus is the main blur fix. Only request modes the device advertises.
+    const advanced: MediaTrackConstraintSet[] = [];
+    if (caps.focusMode?.includes('continuous')) {
+      advanced.push({ focusMode: 'continuous' } as any);
+    }
+    if (caps.exposureMode?.includes('continuous')) {
+      advanced.push({ exposureMode: 'continuous' } as any);
+    }
+    if (caps.zoom) {
+      const safeZoom = Math.max(caps.zoom.min, Math.min(caps.zoom.max, zoom));
+      advanced.push({ zoom: safeZoom } as any);
+    }
+    if (caps.torch) advanced.push({ torch: torchOn } as any);
+
+    if (advanced.length) {
+      try {
+        await track.applyConstraints({ advanced });
+      } catch {
+        // Some Android browsers expose capabilities but reject one optional control.
+        // The camera should continue normally without those controls.
       }
+    }
 
-      if (capabilities?.zoom) {
-        const safeZoom = Math.max(capabilities.zoom.min, Math.min(capabilities.zoom.max, zoom));
-        advanced.push({ zoom: safeZoom } as MediaTrackConstraintSet);
-      }
-
-      if (capabilities?.torch) {
-        advanced.push({ torch: torchOn } as MediaTrackConstraintSet);
-      }
-
-      if (advanced.length) await track.applyConstraints({ advanced });
-    } catch {
-      // Focus/zoom/torch are optional and vary by device/browser.
+    // Give autofocus a moment, then re-apply continuous focus when supported.
+    if (caps.focusMode?.includes('continuous')) {
+      window.setTimeout(() => {
+        try {
+          void track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] });
+        } catch { /* optional camera control */ }
+      }, 450);
     }
   };
 
   useEffect(() => {
     if (!isOpen) {
-      void stopScanner();
+      stopScanner();
       return;
     }
 
     let isMounted = true;
-
-    const handleDecoded = async (decodedText: string) => {
-      const code = decodedText.trim();
-      if (!code || scanHandledRef.current) return;
-
-      scanHandledRef.current = true;
-      setLastScanned(code);
-      if (soundEnabled) soundEffects.playBeep(900, 0.1);
-
-      await stopScanner();
-      if (!isMounted) return;
-
-      onScan(code);
-      onClose();
-    };
 
     const startScanner = async () => {
       try {
         setErrorMessage(null);
         setLastScanned(null);
         scanHandledRef.current = false;
-        setTorchOn(false);
-        setZoom(1);
 
-        // Wait until the modal and scanner container are present in the DOM.
-        await new Promise((resolve) => window.setTimeout(resolve, 120));
+        // Wait for the modal DOM to mount before creating the scanner.
+        await new Promise((resolve) => setTimeout(resolve, 200));
         if (!isMounted) return;
 
         const scanner = new Html5Qrcode(html5QrCodeId, {
-          // POS work is normally barcode-heavy, so decode only the formats needed
-          // for the selected mode. This reduces decoder work and improves speed.
-          formatsToSupport:
-            scanMode === 'barcode'
-              ? [
-                  Html5QrcodeSupportedFormats.EAN_13,
-                  Html5QrcodeSupportedFormats.EAN_8,
-                  Html5QrcodeSupportedFormats.UPC_A,
-                  Html5QrcodeSupportedFormats.UPC_E,
-                  Html5QrcodeSupportedFormats.CODE_128,
-                  Html5QrcodeSupportedFormats.CODE_39,
-                  Html5QrcodeSupportedFormats.CODE_93,
-                  Html5QrcodeSupportedFormats.ITF,
-                ]
-              : [Html5QrcodeSupportedFormats.QR_CODE],
+          // Barcode is the primary POS workflow. Keeping QR out of the
+          // default decoder makes EAN/UPC/Code128 detection faster and more
+          // reliable. QR can still be selected with the mode button below.
+          formatsToSupport: scanMode === 'barcode'
+            ? [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39,
+                Html5QrcodeSupportedFormats.CODE_93,
+                Html5QrcodeSupportedFormats.ITF,
+              ]
+            : [Html5QrcodeSupportedFormats.QR_CODE],
+          // Chrome/Android can use the native BarcodeDetector when available,
+          // which makes QR/barcode detection noticeably faster.
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true,
           },
@@ -157,103 +138,127 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         });
 
         scannerRef.current = scanner;
+        setIsScanning(true);
 
+        // Do not use a small square crop: EAN/UPC/Code128 barcodes are often
+        // wide, while QR codes are square. A function lets html5-qrcode choose
+        // a safe scan area for both types on phone screens.
         const config = {
-          // A moderate FPS is faster overall on many phones because decoding
-          // does not compete as aggressively with autofocus and camera preview.
-          fps: scanMode === 'barcode' ? 18 : 15,
+          // Barcode-first scanning: a wider crop matches EAN/UPC/Code128 labels
+          // and avoids wasting decode work on the unused parts of the camera frame.
+          fps: scanMode === 'barcode' ? 15 : 12,
           qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
             if (scanMode === 'barcode') {
               const width = Math.floor(Math.min(viewfinderWidth * 0.92, 560));
-              const height = Math.floor(Math.min(viewfinderHeight * 0.34, 180));
+              const height = Math.floor(Math.min(viewfinderHeight * 0.30, 170));
               return { width, height };
             }
-
-            const size = Math.floor(
-              Math.min(viewfinderWidth * 0.72, viewfinderHeight * 0.68, 360)
-            );
+            const size = Math.floor(Math.min(viewfinderWidth * 0.72, viewfinderHeight * 0.58, 360));
             return { width: size, height: size };
           },
-          disableFlip: false,
+          // Let the browser keep the phone's natural aspect ratio; forcing 16:9
+          // can crop the useful barcode area on portrait phones.
+          disableFlip: true,
+          // 1280x720 is usually a better mobile scanning sweet spot than 1080p:
+          // enough detail for retail barcodes while reducing autofocus/CPU lag.
           videoConstraints: {
+            // Do not force 16:9. Portrait Android/iPhone cameras often expose
+            // a portrait stream; forcing a landscape ratio can crop/resample it.
             facingMode: { ideal: 'environment' },
-            // 720p is a reliable mobile sweet spot: enough barcode detail with
-            // less autofocus/CPU delay than forcing 1080p on every device.
             width: { ideal: 1280, min: 640 },
             height: { ideal: 720, min: 480 },
-            frameRate: { ideal: 30, max: 30 },
+            frameRate: { ideal: 24, max: 30 },
           } as MediaTrackConstraints,
         };
 
+        // Prefer the environment/rear camera. The config also requests HD video
+        // and continuous autofocus where the device/browser supports it.
         try {
           await scanner.start(
             { facingMode: { ideal: 'environment' } },
             config,
-            handleDecoded,
-            () => {
-              // Decode failures on individual frames are normal.
-            }
-          );
-        } catch {
-          // Fallback for browsers/PWAs that do not reliably honor facingMode.
-          const cameras = await Html5Qrcode.getCameras();
-          if (!cameras.length) {
-            throw new Error('No camera found. Please allow camera permission.');
+          async (decodedText) => {
+            const code = decodedText.trim();
+            if (!code || scanHandledRef.current) return;
+            scanHandledRef.current = true;
+
+            setLastScanned(code);
+            if (soundEnabled) soundEffects.playBeep(900, 0.1);
+
+            // Stop the camera first, then deliver the result. This avoids the
+            // callback firing repeatedly while the item is being added.
+            await stopScanner();
+            if (!isMounted) return;
+            onScan(code);
+            onClose();
+          },
+          () => {
+            // Per-frame decode failures are normal; keep scanning silently.
           }
-
-          const rearCamera = cameras.find((camera) =>
-            /back|rear|environment|world/i.test(camera.label || '')
-          );
-          const cameraId = rearCamera?.id || cameras[cameras.length - 1].id;
-
-          await scanner.start(cameraId, config, handleDecoded, () => {
-            // Keep scanning silently.
-          });
-        }
-
-        if (!isMounted) {
-          await stopScanner();
-          return;
-        }
-
-        setIsScanning(true);
-        await new Promise((resolve) => window.setTimeout(resolve, 150));
+        );
         await tuneCamera();
-      } catch (err: unknown) {
+        } catch (environmentError) {
+          // Fallback for browsers that do not accept exact facingMode.
+          const cameras = await Html5Qrcode.getCameras();
+          if (!cameras.length) throw new Error('No camera found. Please allow camera permission.');
+          const rearCamera = cameras.find((camera) => /back|rear|environment|world/i.test(camera.label || ''));
+          const cameraId = rearCamera?.id || cameras[cameras.length - 1].id;
+          await scanner.start(cameraId, config, async (decodedText) => {
+            const code = decodedText.trim();
+            if (!code || scanHandledRef.current) return;
+            scanHandledRef.current = true;
+            setLastScanned(code);
+            if (soundEnabled) soundEffects.playBeep(900, 0.1);
+            await stopScanner();
+            if (!isMounted) return;
+            onScan(code);
+            onClose();
+          }, () => {});
+          await tuneCamera();
+        }
+      } catch (err: any) {
         console.warn('Camera scanner start error:', err);
-        const message = err instanceof Error ? err.message : '';
         setErrorMessage(
-          message || 'Unable to start the camera. Check camera permission or enter the code below.'
+          err?.message ||
+            'Unable to start the camera. Check camera permission or enter the code below.'
         );
         setIsScanning(false);
       }
     };
-
-    void startScanner();
+    startScanner();
 
     return () => {
       isMounted = false;
-      void stopScanner();
+      stopScanner();
     };
   }, [isOpen, scanMode]);
 
   useEffect(() => {
     if (!isOpen || !isScanning) return;
-    const timer = window.setTimeout(() => {
-      void tuneCamera();
-    }, 180);
+    const timer = window.setTimeout(() => { void tuneCamera(); }, 250);
     return () => window.clearTimeout(timer);
   }, [torchOn, zoom, isOpen, isScanning]);
+
+  const stopScanner = async () => {
+    try {
+      if (scannerRef.current && scannerRef.current.isScanning) {
+        await scannerRef.current.stop();
+        scannerRef.current.clear();
+      }
+      scannerRef.current = null;
+      setIsScanning(false);
+    } catch (e) {
+      // Ignore cleanup error
+    }
+  };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCode.trim()) return;
-
     scanHandledRef.current = true;
     if (soundEnabled) soundEffects.playBeep(900, 0.1);
-
     const code = manualCode.trim();
-    void stopScanner();
+    stopScanner();
     onScan(code);
     setManualCode('');
     onClose();
@@ -264,160 +269,136 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="w-full max-w-md max-h-[94vh] bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+        {/* Header */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 shrink-0 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center">
               <Scan className="w-5 h-5 animate-pulse" />
             </div>
-            <div className="min-w-0">
+            <div>
               <h3 className="font-bold text-sm text-slate-100">{title}</h3>
-              <p className="text-[11px] text-slate-400 truncate">{subtitle}</p>
+              <p className="text-[11px] text-slate-400">{subtitle}</p>
             </div>
           </div>
           <button
-            type="button"
             onClick={() => {
-              void stopScanner();
+              stopScanner();
               onClose();
             }}
-            className="w-8 h-8 shrink-0 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
-            aria-label="Close scanner"
+            className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
+        {/* Scan mode: barcode is the fast/default POS mode */}
         <div className="px-3 pt-3 bg-slate-900">
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-950 border border-slate-800">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => {
-                if (scanMode !== 'barcode') {
-                  void stopScanner();
-                  setScanMode('barcode');
-                }
-              }}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold border transition ${
-                scanMode === 'barcode'
-                  ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-300 shadow-sm'
-                  : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={() => { stopScanner(); setScanMode('barcode'); }}
+              className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border transition ${scanMode === 'barcode' ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
             >
               <Barcode className="w-4 h-4" /> Barcode (Fast)
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (scanMode !== 'qr') {
-                  void stopScanner();
-                  setScanMode('qr');
-                }
-              }}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold border transition ${
-                scanMode === 'qr'
-                  ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-300 shadow-sm'
-                  : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={() => { stopScanner(); setScanMode('qr'); }}
+              className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border transition ${scanMode === 'qr' ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
             >
               <QrCode className="w-4 h-4" /> QR
             </button>
           </div>
         </div>
 
-        <div className="relative bg-black h-[42vh] min-h-[260px] max-h-[410px] flex items-center justify-center overflow-hidden shrink-0 mt-3">
+        {/* Video Scanner Area */}
+        <div className="relative bg-black h-[42vh] min-h-[260px] max-h-[400px] flex items-center justify-center overflow-hidden shrink-0">
           <div id={html5QrCodeId} className="w-full h-full" />
 
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/30" />
+          {/* Scanner Overlay Sight Guide */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className={`${scanMode === 'barcode' ? 'w-[92%] h-[30%] max-w-[560px]' : 'w-[72%] h-[58%] max-w-[360px]'} border-2 border-dashed border-cyan-400/80 rounded-2xl relative">
+              <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-cyan-400 rounded-tl-lg" />
+              <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-cyan-400 rounded-tr-lg" />
+              <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-cyan-400 rounded-bl-lg" />
+              <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-cyan-400 rounded-br-lg" />
 
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-3">
-            <div
-              className={`${
-                scanMode === 'barcode'
-                  ? 'w-[92%] h-[34%] max-w-[560px] max-h-[180px]'
-                  : 'w-[72%] aspect-square max-w-[360px]'
-              } border border-cyan-300/70 rounded-2xl relative shadow-[0_0_0_999px_rgba(0,0,0,0.20)]`}
-            >
-              <div className="absolute -top-px -left-px w-7 h-7 border-t-[3px] border-l-[3px] border-cyan-300 rounded-tl-xl" />
-              <div className="absolute -top-px -right-px w-7 h-7 border-t-[3px] border-r-[3px] border-cyan-300 rounded-tr-xl" />
-              <div className="absolute -bottom-px -left-px w-7 h-7 border-b-[3px] border-l-[3px] border-cyan-300 rounded-bl-xl" />
-              <div className="absolute -bottom-px -right-px w-7 h-7 border-b-[3px] border-r-[3px] border-cyan-300 rounded-br-xl" />
-              <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-px bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_10px_rgba(103,232,249,0.9)] animate-pulse" />
+              {/* Laser animation bar */}
+              <div className="absolute inset-x-2 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-bounce top-1/2 -translate-y-1/2 shadow-lg shadow-cyan-400/50" />
             </div>
           </div>
 
+          {/* Focus hint */}
+          {isScanning && !errorMessage && (
+            <div className="pointer-events-none absolute bottom-3 inset-x-0 z-10 flex justify-center">
+              <div className="px-3 py-1.5 rounded-full bg-black/60 border border-white/10 backdrop-blur text-[10px] text-white/80">
+                Keep the code sharp • move slightly closer if blurry
+              </div>
+            </div>
+          )}
+
+          {/* Camera controls */}
           {isScanning && (
             <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setTorchOn((value) => !value)}
-                className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold backdrop-blur-md border transition ${
-                  torchOn
-                    ? 'bg-amber-300 text-slate-950 border-amber-200'
-                    : 'bg-slate-950/70 text-white border-white/20'
-                }`}
+                onClick={() => setTorchOn(v => !v)}
+                className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold backdrop-blur border ${torchOn ? 'bg-amber-400/90 text-slate-950 border-amber-300' : 'bg-slate-950/65 text-white border-white/20'}`}
                 title="Toggle flashlight"
               >
-                {torchOn ? '🔦 ON' : '🔦 Light'}
+                {torchOn ? '🔦 ON' : '🔦'}
               </button>
-
               <select
                 value={zoom}
                 onChange={(e) => setZoom(Number(e.target.value))}
-                className="px-2 py-1.5 rounded-xl bg-slate-950/70 text-white text-[10px] font-bold border border-white/20 backdrop-blur-md outline-none"
+                className="px-2 py-1.5 rounded-xl bg-slate-950/65 text-white text-[10px] font-bold border border-white/20 backdrop-blur outline-none"
                 aria-label="Camera zoom"
               >
                 <option value={1}>1×</option>
                 <option value={1.5}>1.5×</option>
                 <option value={2}>2×</option>
+                <option value={2.5}>2.5×</option>
               </select>
             </div>
           )}
 
-          <div className="pointer-events-none absolute bottom-3 inset-x-3 flex justify-center">
-            <div className="px-3 py-1.5 rounded-full bg-slate-950/65 border border-white/10 backdrop-blur text-[10px] text-slate-200">
-              {scanMode === 'barcode'
-                ? 'Align the full barcode horizontally inside the frame'
-                : 'Keep the full QR code inside the square'}
-            </div>
-          </div>
-
+          {/* Error fallback display */}
           {errorMessage && (
-            <div className="absolute inset-0 z-20 bg-slate-950/95 p-5 flex flex-col items-center justify-center text-center">
+            <div className="absolute inset-0 bg-slate-950/90 p-5 flex flex-col items-center justify-center text-center">
               <AlertCircle className="w-10 h-10 text-amber-400 mb-2" />
               <p className="text-xs text-slate-200 font-medium max-w-xs">{errorMessage}</p>
-              <p className="text-[11px] text-cyan-300 mt-2">
-                Check camera permission, or use the manual code field below.
-              </p>
+              <p className="text-[11px] text-cyan-300 mt-2">Use the Manual Code field below if camera scanning is unavailable.</p>
             </div>
           )}
 
           {lastScanned && (
-            <div className="absolute top-3 left-3 right-3 z-30 bg-emerald-400/95 text-slate-950 px-3 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg animate-in fade-in">
+            <div className="absolute top-3 inset-x-3 bg-emerald-500/90 text-slate-950 px-3 py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg animate-in fade-in">
               <CheckCircle2 className="w-4 h-4" />
-              <span className="truncate">Scanned: {lastScanned}</span>
+              <span>Scanned: {lastScanned}</span>
             </div>
           )}
         </div>
 
+        {/* Manual Barcode Entry Fallback (or for hardware barcode scanners) */}
         <div className="p-3 bg-slate-900 border-t border-slate-800 shrink-0">
           <form onSubmit={handleManualSubmit} className="space-y-2">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
               <Keyboard className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Manual code / USB / Bluetooth scanner</span>
+              <span>Enter a code or use a USB/Bluetooth scanner:</span>
             </div>
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                inputMode="numeric"
+                autoFocus
                 placeholder="e.g. 890123456001"
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
-                className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-100 font-mono placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
+                className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-100 font-mono placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
               />
               <button
                 type="submit"
                 disabled={!manualCode.trim()}
-                className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-bold text-xs transition"
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-bold text-xs transition"
               >
                 Add Code
               </button>
@@ -425,11 +406,10 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
           </form>
         </div>
 
-        <div className="px-4 py-2.5 bg-slate-950 border-t border-slate-800/80 flex items-center justify-between gap-3 text-[10px] text-slate-500">
-          <span className="truncate">
-            {scanMode === 'barcode' ? 'EAN • UPC • Code 128 • Code 39 • ITF' : 'QR Code'}
-          </span>
-          <span className="font-semibold text-slate-400 shrink-0">{appName}</span>
+        {/* Footer info */}
+        <div className="px-4 py-2.5 bg-slate-950 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
+          <span>Fast: EAN / UPC / Code 128 / Code 39</span>
+          <span className="font-semibold text-slate-400">{appName}</span>
         </div>
       </div>
     </div>
